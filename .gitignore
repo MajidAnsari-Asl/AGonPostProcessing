@@ -1,0 +1,40 @@
+# Build directories
+build/
+bin/
+*.o
+*.a
+*.so
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files
+*.tiff
+*.tif
+*.png
+*.jpg
+*.bin
+data/
+*.txt
+
+# Executables
+*.exe
+*.app
+*.dmg
+
+# OS
+.DS_Store
+.__MACOSX/
+
+# Local config
+local_config.h
+*.local
