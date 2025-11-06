@@ -23,6 +23,7 @@ Makefile
 *.png
 *.jpg
 *.bin
+results/
 
 # Executables
 *.exe
