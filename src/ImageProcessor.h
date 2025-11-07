@@ -6,6 +6,12 @@
 #include <string>
 #include <map>
 
+#define NUM_ALL_MS_CHANNELS 8
+#define NUM_EFFECTIVE_MS_CHANNELS 6
+#define NUM_HDR_BRACKETS 3
+
+enum class BracketStatus { FIRST_BRACKET, MIDDLE_BRACKET, LAST_BRACKET };
+
 struct ImagingGeometry {
     double theta_i;
     double phi_i;
@@ -32,8 +38,8 @@ class MetadataReader {
 public:
     static std::vector<ImagingGeometry> readMetadata(const std::string& filepath);
     static std::vector<ImagingGeometry> filterGeometries(
-        const std::vector<ImagingGeometry>& allGeometries,
-        const std::string& analyzeGeometriesFile);
+        const std::string& basePath,
+        const ImagingGeometry& geometry);  
 };
 
 class CameraCalibration {
@@ -61,7 +67,7 @@ public:
     
 private:
     cv::Mat radianceMap;
-    cv::Mat createMask(const cv::Mat& image, double exposureTime) const;
+    cv::Mat createMask(const cv::Mat& image) const;
 };
 
 class ImageRectifier {
@@ -113,7 +119,8 @@ private:
                         const std::string& imageFolder,
                         const std::string& whiteRefFolder);
     std::vector<cv::Mat> loadChannelImages(const std::string& basePath, 
-                                          const ImagingGeometry& geometry);
+                                          const ImagingGeometry& geometry,
+                                          std::vector<ImagingGeometry>& msImagesGeometries);
 };
 
 #endif

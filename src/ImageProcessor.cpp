@@ -43,23 +43,22 @@ std::vector<ImagingGeometry> MetadataReader::readMetadata(const std::string& fil
 }
 
 std::vector<ImagingGeometry> MetadataReader::filterGeometries(
-    const std::vector<ImagingGeometry>& allGeometries,
-    const std::string& analyzeGeometriesFile) {
+    const std::string& basePath,
+    const ImagingGeometry& geometry) {
+ 
+    // Read metadata
+    std::string imageMetadataPath = basePath + "/metadata.txt";
     
-    // Read geometries to analyze
-    auto targetGeometries = readMetadata(analyzeGeometriesFile);
+    auto allGeometries = MetadataReader::readMetadata(imageMetadataPath);
     
     std::vector<ImagingGeometry> filtered;
     
     for (const auto& imageGeo : allGeometries) {
-        for (const auto& targetGeo : targetGeometries) {
-            if (imageGeo.theta_i == targetGeo.theta_i &&
-                imageGeo.phi_i == targetGeo.phi_i &&
-                imageGeo.theta_r == targetGeo.theta_r &&
-                imageGeo.phi_r == targetGeo.phi_r) {
-                filtered.push_back(imageGeo);
-                break;
-            }
+        if (imageGeo.theta_i == geometry.theta_i &&
+            imageGeo.phi_i == geometry.phi_i &&
+            imageGeo.theta_r == geometry.theta_r &&
+            imageGeo.phi_r == geometry.phi_r) {
+            filtered.push_back(imageGeo);
         }
     }
     
@@ -128,7 +127,7 @@ cv::Mat HDRConstructor::constructHDR(const std::vector<cv::Mat>& images,
         radiance /= expTime;
         
         // Create weight mask
-        cv::Mat weightMask = createMask(corrected, expTime);
+        cv::Mat weightMask = createMask(corrected);
         
         // Accumulate weighted radiance
         cv::Mat weightedRadiance;
@@ -147,7 +146,7 @@ cv::Mat HDRConstructor::constructHDR(const std::vector<cv::Mat>& images,
     return radianceMap;
 }
 
-cv::Mat HDRConstructor::createMask(const cv::Mat& image, double exposureTime) const {
+cv::Mat HDRConstructor::createMask(const cv::Mat& image) const {
     cv::Mat mask;
     image.convertTo(mask, CV_32F);
     
@@ -162,11 +161,15 @@ cv::Mat HDRConstructor::createMask(const cv::Mat& image, double exposureTime) co
                 weight.at<float>(i, j) = 0.0f;
             } else if (pixelValue >= params.maxDigCount - params.upDCMargin) {
                 weight.at<float>(i, j) = 0.0f;
-            } else {
-                // Triangular weighting - peak at middle of valid range
-                float midRange = (params.minDigCount + params.maxDigCount) / 2.0f;
-                weight.at<float>(i, j) = 1.0f - std::abs(pixelValue - midRange) / 
-                                        ((params.maxDigCount - params.minDigCount) / 2.0f);
+            } 
+            else {
+                // // Triangular weighting - peak at middle of valid range
+                // float midRange = (params.minDigCount + params.maxDigCount) / 2.0f;
+                // weight.at<float>(i, j) = 1.0f - std::abs(pixelValue - midRange) / 
+                //                         ((params.maxDigCount - params.minDigCount) / 2.0f);
+
+                // for now, the pixel values are kept without weighting
+                weight.at<float>(i, j) = 1.0f;
             }
         }
     }
@@ -275,12 +278,7 @@ void MultispectralProcessor::processDataset(const std::string& imageFolder,
                                            const std::string& whiteRefFolder,
                                            const std::string& analyzeGeometriesFile) {
     
-    // Read metadata
-    std::string imageMetadataPath = imageFolder + "/metadata.txt";
-    std::string whiteRefMetadataPath = whiteRefFolder + "/metadata.txt";
-    
-    auto imageGeometries = MetadataReader::readMetadata(imageMetadataPath);
-    auto whiteRefGeometries = MetadataReader::readMetadata(whiteRefMetadataPath);
+    // Read imaging geometries to be analyzed
     auto geometriesToAnalyze = MetadataReader::readMetadata(analyzeGeometriesFile);
     
     // Filter geometries to analyze
@@ -298,21 +296,56 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
                                             const std::string& whiteRefFolder) {
     
     std::cout << "Processing geometry: " << 
-                "theta_i"<< geometry.theta_i<< 
-                ", phi_i"<< geometry.phi_i<<
-                ", theta_r"<< geometry.theta_r<<
-                ", phi_r"<< geometry.phi_r<<
+                "theta_i="<< geometry.theta_i<< 
+                ", phi_i="<< geometry.phi_i<<
+                ", theta_r="<< geometry.theta_r<<
+                ", phi_r="<< geometry.phi_r<<
                 std::endl;
     
     // Load MS images and white reference images for this geometry
-    auto msImages = loadChannelImages(imageFolder, geometry);
-    auto whiteRefImages = loadChannelImages(whiteRefFolder, geometry);
+    std::vector<ImagingGeometry> msImagesGeometries;
+    auto msImages = loadChannelImages(imageFolder, geometry, msImagesGeometries);
+    auto whiteRefImages = loadChannelImages(whiteRefFolder, geometry, msImagesGeometries);
     
     // TODO: Load dark images based on exposure times. For now, dark noise is set to a fixed value.
     std::vector<cv::Mat> darkImages(msImages.size(),
     cv::Mat(msImages[0].size(), msImages[0].type(), cv::Scalar(hdrParams.fixedDarkNoise)));
     
-    // TODO: Implement HDR construction for each channel
+
+    // HDR construction channel-wise
+    std::vector<cv::Mat> hdrMSImage;
+    std::vector<cv::Mat> hdrWhiteRefImage;
+
+    for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
+        std::vector<cv::Mat> singleCHImages;
+        std::vector<cv::Mat> singleCHWhiteRefImages;
+        std::vector<cv::Mat> singleCHDarkImages;
+        std::vector<double> exposureTimes;
+
+        for (int capture = 0; capture < NUM_HDR_BRACKETS; ++capture) {
+            int idx = capture * NUM_EFFECTIVE_MS_CHANNELS + channel;
+            singleCHImages.push_back(msImages[idx]);
+            singleCHWhiteRefImages.push_back(whiteRefImages[idx]);
+            exposureTimes.push_back(msImagesGeometries[idx].exposure_time);
+            singleCHDarkImages.push_back(darkImages[idx]);
+
+        }
+        //construct HDR for this channel
+        cv::Mat img = hdrConstructor.constructHDR(singleCHImages, exposureTimes, singleCHDarkImages);
+        if (!img.empty()) {
+            hdrMSImage.push_back(img);
+        }
+        //construct HDR for this channel's white reference
+        cv::Mat img2 = hdrConstructor.constructHDR(singleCHWhiteRefImages, exposureTimes, singleCHDarkImages);
+        if (!img2.empty()) {
+            hdrWhiteRefImage.push_back(img);
+        }
+    }
+
+
+
+
+
     // TODO: Implement image rectification
     // TODO: Implement ROI selection and patch analysis
     
@@ -320,21 +353,40 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
 }
 
 std::vector<cv::Mat> MultispectralProcessor::loadChannelImages(const std::string& basePath,
-                                                              const ImagingGeometry& geometry) {
+                                                              const ImagingGeometry& geometry,
+                                                              std::vector<ImagingGeometry>& msImagesGeometries) {
     std::vector<cv::Mat> images;
+    std::vector<ImagingGeometry> msImGeos; 
     
-    // Placeholder - implement actual image loading for channels 2-7
-    // This would involve reading 3 captures × 6 channels
-    
-    for (int capture = 1; capture <= 3; ++capture) {
-        for (int channel = 2; channel <= 7; ++channel) {
-            std::string imagePath = basePath + "/" + geometry.filename;
-            cv::Mat img = cv::imread(imagePath, cv::IMREAD_UNCHANGED);
-            if (!img.empty()) {
-                images.push_back(img);
-            }
+    // Filter geometries to analyze
+    auto geometriesToAnalyze = MetadataReader::filterGeometries(basePath, geometry);
+
+    // Sort to load from lower to higher image name numbering
+    std::vector<size_t> indices(geometriesToAnalyze.size());
+    for (size_t i = 0; i < indices.size(); ++i) indices[i] = i;
+    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+        return std::stoi(geometriesToAnalyze[a].filename) < std::stoi(geometriesToAnalyze[b].filename);
+    });
+
+    for (size_t idx : indices) {
+        // Skip channels 1 and 8
+        if (geometriesToAnalyze[idx].filter_num == 1 || geometriesToAnalyze[idx].filter_num == 8) {
+        continue;  
+        }   
+        // Image loading for channels 2-7
+        std::string imagePath = basePath + "/" + geometriesToAnalyze[idx].filename;
+        cv::Mat img = cv::imread(imagePath, cv::IMREAD_UNCHANGED);
+        if (!img.empty()) {
+            images.push_back(img);
+            msImGeos.push_back(geometriesToAnalyze[idx]);
         }
-    }
+        
+        // TODO: Implement combining multiple exposures per channel if needed
+    }   
+
+    if (msImagesGeometries.empty()) {
+            msImagesGeometries= msImGeos;
+        }
     
     return images;
 }
