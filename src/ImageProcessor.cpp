@@ -157,19 +157,19 @@ cv::Mat HDRConstructor::createMask(const cv::Mat& image) const {
         for (int j = 0; j < mask.cols; ++j) {
             float pixelValue = mask.at<float>(i, j);
             
-            if (pixelValue <= params.minDigCount + params.downDCMargin) {
+            if (pixelValue <= params.minDigCount) {
                 weight.at<float>(i, j) = 0.0f;
-            } else if (pixelValue >= params.maxDigCount - params.upDCMargin) {
+            } else if (pixelValue >= params.maxDigCount) {
                 weight.at<float>(i, j) = 0.0f;
             } 
             else {
-                // // Triangular weighting - peak at middle of valid range
-                // float midRange = (params.minDigCount + params.maxDigCount) / 2.0f;
-                // weight.at<float>(i, j) = 1.0f - std::abs(pixelValue - midRange) / 
-                //                         ((params.maxDigCount - params.minDigCount) / 2.0f);
+                // Triangular weighting - peak at middle of valid range
+                float midRange = (params.minDigCount + params.maxDigCount) / 2.0f;
+                weight.at<float>(i, j) = 1.0f - std::abs(pixelValue - midRange) / 
+                                        ((params.maxDigCount - params.minDigCount) / 2.0f);
 
                 // for now, the pixel values are kept without weighting
-                weight.at<float>(i, j) = 1.0f;
+                // weight.at<float>(i, j) = 1.0f;
             }
         }
     }
@@ -312,7 +312,7 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
     cv::Mat(msImages[0].size(), msImages[0].type(), cv::Scalar(hdrParams.fixedDarkNoise)));
     
 
-    // HDR construction channel-wise
+    //------------------------------------------- HDR construction channel-wise
     std::vector<cv::Mat> hdrMSImage;
     std::vector<cv::Mat> hdrWhiteRefImage;
 
@@ -342,11 +342,11 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
         }
     }
 
+//------------------------------------------- Image rectification
 
 
 
 
-    // TODO: Implement image rectification
     // TODO: Implement ROI selection and patch analysis
     
     std::cout << "Completed processing for: " << geometry.filename << std::endl;
