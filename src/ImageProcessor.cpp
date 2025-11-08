@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <filesystem>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
@@ -177,16 +178,219 @@ cv::Mat HDRConstructor::createMask(const cv::Mat& image) const {
     return weight;
 }
 
-// ImageRectifier implementation (simplified - you'll integrate your existing code)
+// ImageRectifier implementation
 bool ImageRectifier::calibrateFromImages(const std::vector<std::string>& imagePaths) {
-    // Placeholder - integrate your existing ChArUco calibration code here
     std::cout << "Image rectification calibration would be performed here" << std::endl;
     return true;
 }
 
 cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
-    // Placeholder - integrate your existing rectification code here
-    return image.clone();
+
+    // read meta data file
+	// std::string strDataPath = "..\\CapturedData\\"; // which includes image names and directions ...
+	// std::string MetaDataPTxtName = "MetaData.txt";
+	// std::ifstream myFileStream(strDataPath + MetaDataPTxtName);
+	// if (!myFileStream.is_open())
+	// {
+	// 	QMessageBox msgBox;
+	// 	msgBox.setText("Error opening file MetaData.txt!");
+	// 	msgBox.exec();
+	// }
+
+	std::string myString;
+	std::string txtline;
+
+	// just to skip two first lines of txt file 
+	//getline(myFileStream, txtline);
+	//getline(myFileStream, txtline);
+
+	// nAllAcquiredImagesPostProcessing = 0;
+	
+	
+	int IRCnt = 0;				//Incident-Reflection combination counter
+	int nFilterCnt = 0;		// filter counter
+
+	// while (std::getline(myFileStream, txtline))
+	// {
+	// 	//All Acquired Images Counter
+	// 	nAllAcquiredImagesPostProcessing += 1;
+
+	// 	strPostImageNames[IRCnt][nFilterCnt] = txtline;
+
+	// 	nFilterCnt += 1;
+	// 	if (nFilterCnt == NUMBER_FILTERS)
+	// 	{
+	// 		nFilterCnt = 0;
+	// 		IRCnt += 1;
+	// 	}	
+	// }
+
+	// nAllIRCombPostProcessingCnt = IRCnt; // all Incident-Reflection combinations in post processing
+	// myFileStream.close();
+	// end of read meta data file
+
+	// output path
+	std::string outRegPath = "..\\RegisteredImages\\";
+
+	// make ChArUco board
+	int squaresX = 10;
+	int squaresY = 10;
+	float squareLength = 0.01;
+	float markerLength = 0.006;
+	int dictionaryId = 6;
+	std::string strCameraCalibTxtFile = "My_camera_calib.txt";
+
+	bool showChessboardCorners = true;
+
+	int calibrationFlags = 0;
+	float aspectRatio = 1;
+
+	// cv::Ptr<cv::aruco::DetectorParameters> detectorParams = cv::aruco::DetectorParameters::create();
+	
+	bool refindStrategy = false;
+	int camId = 0;
+	std::string video;
+
+	int waitTime;
+	waitTime = 0;
+	
+	cv::aruco::Dictionary dict =
+		cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_250);
+
+    // create a Ptr from the Dictionary object
+    cv::Ptr<cv::aruco::Dictionary> dictionary = cv::makePtr<cv::aruco::Dictionary>(dict);
+
+	// create charuco board object
+    cv::Size charocoSize = cv::Size(squaresX, squaresY);
+	cv::aruco::CharucoBoard charucoBoard =
+		cv::aruco::CharucoBoard(charocoSize, squareLength, markerLength, dict);
+    charucoBoard.setLegacyPattern(true);
+    cv::Ptr<cv::aruco::CharucoBoard> charucoBoardPtr = cv::makePtr<cv::aruco::CharucoBoard>(charucoBoard);
+
+    // read the image of ChArUco board
+	cv::Mat imageCharucoBoard;
+	imageCharucoBoard = cv::imread("../data/MyChArUco_10by10_1cm_0.6cm_20230303_300dpi.tiff");
+
+	// read camera calibration matrices
+	// help from: https://docs.opencv.org/4.x/dd/d74/tutorial_file_input_output_with_xml_yml.html
+	cv::FileStorage fs("../data/My_camera_calib.txt", cv::FileStorage::READ);
+	if (!fs.isOpened())
+	{
+		// QMessageBox msgBox;
+		// msgBox.setText("Error opening file My_camera_calib.txt!");
+		// msgBox.exec();
+	}
+
+	cv::Mat cameraMatrix = cv::Mat_<double>::eye(3, 3),
+		distCoeffs   = cv::Mat_<double>::zeros(1, 5);
+
+	fs["camera_matrix"] >> cameraMatrix;                                      // Read cv::Mat
+	fs["distortion_coefficients"] >> distCoeffs;
+
+	fs.release();                                       // explicit close
+	// end of read camera calibration matrices 
+
+	// for (size_t i = 0; i < nAllIRCombPostProcessingCnt; i++) // all the acquired images
+	// {
+		// cv::Mat originalImage = image; //5th(j = 3) filter used for homography
+		cv::Mat undistortedImage;
+		undistort(image, undistortedImage, cameraMatrix, distCoeffs);// // 4th(j=3) filter camera matrix is used for all channels. could be channelwise later
+
+		// image registration using ChArUco board; I got help from chatGPT
+		// Load the images
+		cv::Mat img1 = undistortedImage;
+		cv::Mat img2 = imageCharucoBoard;
+
+		// Detect the ChArUco board corners in the first image
+		std::vector<std::vector<cv::Point2f>> corners1;
+		std::vector<int> ids1;
+		std::vector<cv::Point2f> charucoCorners1;
+		std::vector<int> charucoIds1;
+		cv::aruco::detectMarkers(img1, dictionary, corners1, ids1);
+		if (ids1.size() > 4) // 4 corners should be detected at least, otherwise jumps to the next IRComb images in fr loop
+		{
+
+			cv::aruco::interpolateCornersCharuco(corners1, ids1, img1, charucoBoardPtr, charucoCorners1, charucoIds1);
+			if (charucoIds1.size() > 0)
+			{
+				cv::aruco::drawDetectedCornersCharuco(img1, charucoCorners1, charucoIds1);
+			}
+		}
+		else
+		{
+			// continue;
+		}
+
+		// Detect the ChArUco board corners in the second image////////////////////////// probably can be done once as it is fixed in all loop itterations, CORRECT LATER
+		std::vector<std::vector<cv::Point2f>> corners2;
+		std::vector<int> ids2;
+		std::vector<cv::Point2f> charucoCorners2;
+		std::vector<int> charucoIds2;
+
+		cv::aruco::detectMarkers(img2, dictionary, corners2, ids2);
+		if (ids2.size() > 0)
+		{
+
+			cv::aruco::interpolateCornersCharuco(corners2, ids2, img2, charucoBoardPtr, charucoCorners2, charucoIds2);
+			if (charucoIds2.size() > 0)
+			{
+				cv::aruco::drawDetectedCornersCharuco(img2, charucoCorners2, charucoIds2);
+			}
+		}
+
+		// Find the homography matrix
+		cv::Mat homography;
+		std::vector<cv::Point2f> srcPoints, dstPoints;
+		for (int i = 0; i < charucoIds1.size(); i++)
+		{
+			for (int j = 0; j < charucoIds2.size(); j++)
+			{
+				if (charucoIds1[i] == charucoIds2[j])
+				{
+					srcPoints.push_back(charucoCorners1[i]);
+					dstPoints.push_back(charucoCorners2[j]);
+					break;
+				}
+			}
+		}
+		homography = findHomography(srcPoints, dstPoints);
+
+
+		// for (size_t j = 1; j < NUMBER_FILTERS-1; j++) // just filters 2 to 7
+		// {
+			// cv::Mat originalImage2 = image;
+			// cv::Mat undistortedImage2;
+			// undistort(originalImage2, undistortedImage2, cameraMatrix, distCoeffs);
+
+			// cv::Mat img11 = undistortedImage2;
+
+
+			// Register the two images using the homography matrix
+			cv::Mat registeredImg;
+			warpPerspective(undistortedImage, registeredImg, homography, img2.size());
+
+
+			//// Display the results
+			//namedWindow("img1", WINDOW_NORMAL);
+			//imshow("img1", img1);
+			//namedWindow("img2", WINDOW_NORMAL);
+			//imshow("img2", img2);
+			//namedWindow("registeredImg", WINDOW_NORMAL);
+			//imshow("registeredImg", registeredImg);
+			//waitKey(0);
+
+			// wrtie the registered image
+			// std::string outImPath = outRegPath + strPostImageNames[i][j];
+			// cv::imwrite(outImPath, registeredImg);
+
+			// end of image registration
+			
+		// }
+
+	// }
+    
+
+    return registeredImg.clone();
 }
 
 // ROISelector implementation
@@ -342,8 +546,15 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
         }
     }
 
-//------------------------------------------- Image rectification
+    //------------------------------------------- Image rectification
+    std::vector<cv::Mat> rectifiedHDRMSImage;
+    std::vector<cv::Mat> rectifiedHDRWhiteRefImage;
 
+    for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
+        rectifiedHDRMSImage[channel] = imageRectifier.rectifyImage(hdrMSImage[channel]);
+        rectifiedHDRWhiteRefImage[channel] = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
+    }
+    
 
 
 

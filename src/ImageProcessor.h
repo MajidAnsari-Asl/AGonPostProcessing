@@ -2,6 +2,10 @@
 #define IMAGEPROCESSOR_H
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/aruco/charuco.hpp>
+
+
 #include <vector>
 #include <string>
 #include <map>
