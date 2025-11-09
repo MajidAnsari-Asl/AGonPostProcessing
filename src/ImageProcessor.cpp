@@ -185,85 +185,15 @@ bool ImageRectifier::calibrateFromImages(const std::vector<std::string>& imagePa
 }
 
 cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
-
-    // read meta data file
-	// std::string strDataPath = "..\\CapturedData\\"; // which includes image names and directions ...
-	// std::string MetaDataPTxtName = "MetaData.txt";
-	// std::ifstream myFileStream(strDataPath + MetaDataPTxtName);
-	// if (!myFileStream.is_open())
-	// {
-	// 	QMessageBox msgBox;
-	// 	msgBox.setText("Error opening file MetaData.txt!");
-	// 	msgBox.exec();
-	// }
-
-	std::string myString;
-	std::string txtline;
-
-	// just to skip two first lines of txt file 
-	//getline(myFileStream, txtline);
-	//getline(myFileStream, txtline);
-
-	// nAllAcquiredImagesPostProcessing = 0;
-	
-	
-	int IRCnt = 0;				//Incident-Reflection combination counter
-	int nFilterCnt = 0;		// filter counter
-
-	// while (std::getline(myFileStream, txtline))
-	// {
-	// 	//All Acquired Images Counter
-	// 	nAllAcquiredImagesPostProcessing += 1;
-
-	// 	strPostImageNames[IRCnt][nFilterCnt] = txtline;
-
-	// 	nFilterCnt += 1;
-	// 	if (nFilterCnt == NUMBER_FILTERS)
-	// 	{
-	// 		nFilterCnt = 0;
-	// 		IRCnt += 1;
-	// 	}	
-	// }
-
-	// nAllIRCombPostProcessingCnt = IRCnt; // all Incident-Reflection combinations in post processing
-	// myFileStream.close();
-	// end of read meta data file
-
-	// output path
-	std::string outRegPath = "..\\RegisteredImages\\";
-
-	// make ChArUco board
-	int squaresX = 10;
-	int squaresY = 10;
-	float squareLength = 0.01;
-	float markerLength = 0.006;
-	int dictionaryId = 6;
-	std::string strCameraCalibTxtFile = "My_camera_calib.txt";
-
-	bool showChessboardCorners = true;
-
-	int calibrationFlags = 0;
-	float aspectRatio = 1;
-
-	// cv::Ptr<cv::aruco::DetectorParameters> detectorParams = cv::aruco::DetectorParameters::create();
-	
-	bool refindStrategy = false;
-	int camId = 0;
-	std::string video;
-
-	int waitTime;
-	waitTime = 0;
 	
 	cv::aruco::Dictionary dict =
 		cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_250);
-
     // create a Ptr from the Dictionary object
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::makePtr<cv::aruco::Dictionary>(dict);
 
 	// create charuco board object
-    cv::Size charocoSize = cv::Size(squaresX, squaresY);
 	cv::aruco::CharucoBoard charucoBoard =
-		cv::aruco::CharucoBoard(charocoSize, squareLength, markerLength, dict);
+		cv::aruco::CharucoBoard(patternSize, squareLength, markerLength, dict);
     charucoBoard.setLegacyPattern(true);
     cv::Ptr<cv::aruco::CharucoBoard> charucoBoardPtr = cv::makePtr<cv::aruco::CharucoBoard>(charucoBoard);
 
@@ -273,199 +203,106 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
 
 	// read camera calibration matrices
 	// help from: https://docs.opencv.org/4.x/dd/d74/tutorial_file_input_output_with_xml_yml.html
-	cv::FileStorage fs("../data/My_camera_calib.txt", cv::FileStorage::READ);
+	cv::FileStorage fs(strCameraCalibTxtFile, cv::FileStorage::READ);
 	if (!fs.isOpened())
 	{
-		// QMessageBox msgBox;
-		// msgBox.setText("Error opening file My_camera_calib.txt!");
-		// msgBox.exec();
+		std::cerr << "Error opening file My_camera_calib.txt!" << std::endl;
+        return cv::Mat();
 	}
-
-	cv::Mat cameraMatrix = cv::Mat_<double>::eye(3, 3),
-		distCoeffs   = cv::Mat_<double>::zeros(1, 5);
-
 	fs["camera_matrix"] >> cameraMatrix;                                      // Read cv::Mat
 	fs["distortion_coefficients"] >> distCoeffs;
-
 	fs.release();                                       // explicit close
-	// end of read camera calibration matrices 
 
-	// for (size_t i = 0; i < nAllIRCombPostProcessingCnt; i++) // all the acquired images
-	// {
-		// cv::Mat originalImage = image; //5th(j = 3) filter used for homography
-		cv::Mat undistortedImage;
-		undistort(image, undistortedImage, cameraMatrix, distCoeffs);// // 4th(j=3) filter camera matrix is used for all channels. could be channelwise later
+    cv::Mat undistortedImage;
+    undistort(image, undistortedImage, cameraMatrix, distCoeffs);// // 4th(j=3) filter camera matrix is used for all channels. could be channelwise later
 
-		// image registration using ChArUco board; I got help from chatGPT
-		// Load the images
-		cv::Mat img1 = undistortedImage;
-		cv::Mat img2 = imageCharucoBoard;
+    // image registration using ChArUco board;
+    // Load the images
+    cv::Mat img1 = undistortedImage;
+    cv::Mat img2 = imageCharucoBoard;
 
-		// Detect the ChArUco board corners in the first image
-		std::vector<std::vector<cv::Point2f>> corners1;
-		std::vector<int> ids1;
-		std::vector<cv::Point2f> charucoCorners1;
-		std::vector<int> charucoIds1;
-		cv::aruco::detectMarkers(img1, dictionary, corners1, ids1);
-		if (ids1.size() > 4) // 4 corners should be detected at least, otherwise jumps to the next IRComb images in fr loop
-		{
+    // Detect the ChArUco board corners in the first image
+    std::vector<std::vector<cv::Point2f>> corners1;
+    std::vector<int> ids1;
+    std::vector<cv::Point2f> charucoCorners1;
+    std::vector<int> charucoIds1;
+    cv::aruco::detectMarkers(img1, dictionary, corners1, ids1);
+    if (ids1.size() >= 4) // 4 corners should be detected at least, otherwise returns empty matrix
+    {
 
-			cv::aruco::interpolateCornersCharuco(corners1, ids1, img1, charucoBoardPtr, charucoCorners1, charucoIds1);
-			if (charucoIds1.size() > 0)
-			{
-				cv::aruco::drawDetectedCornersCharuco(img1, charucoCorners1, charucoIds1);
-			}
-		}
-		else
-		{
-			// continue;
-		}
+        cv::aruco::interpolateCornersCharuco(corners1, ids1, img1, charucoBoardPtr, charucoCorners1, charucoIds1);
+        if (charucoIds1.size() > 0)
+        {
+            cv::aruco::drawDetectedCornersCharuco(img1, charucoCorners1, charucoIds1);
+        }
+    }
+    else
+    {
+        std::cerr << "Error detecting ChArUco corners in the image!" << std::endl;
+        return cv::Mat();
+    }
 
-		// Detect the ChArUco board corners in the second image////////////////////////// probably can be done once as it is fixed in all loop itterations, CORRECT LATER
-		std::vector<std::vector<cv::Point2f>> corners2;
-		std::vector<int> ids2;
-		std::vector<cv::Point2f> charucoCorners2;
-		std::vector<int> charucoIds2;
+    // Detect the ChArUco board corners in the second image////////////////////////// probably can be done once as it is fixed in all loop itterations, CORRECT LATER
+    std::vector<std::vector<cv::Point2f>> corners2;
+    std::vector<int> ids2;
+    std::vector<cv::Point2f> charucoCorners2;
+    std::vector<int> charucoIds2;
 
-		cv::aruco::detectMarkers(img2, dictionary, corners2, ids2);
-		if (ids2.size() > 0)
-		{
+    cv::aruco::detectMarkers(img2, dictionary, corners2, ids2);
+    if (ids2.size() >= 4)
+    {
 
-			cv::aruco::interpolateCornersCharuco(corners2, ids2, img2, charucoBoardPtr, charucoCorners2, charucoIds2);
-			if (charucoIds2.size() > 0)
-			{
-				cv::aruco::drawDetectedCornersCharuco(img2, charucoCorners2, charucoIds2);
-			}
-		}
+        cv::aruco::interpolateCornersCharuco(corners2, ids2, img2, charucoBoardPtr, charucoCorners2, charucoIds2);
+        if (charucoIds2.size() > 0)
+        {
+            cv::aruco::drawDetectedCornersCharuco(img2, charucoCorners2, charucoIds2);
+        }
+    }
+    else
+    {
+        std::cerr << "Error detecting ChArUco corners in the ChArUco reference image!" << std::endl;
+        return cv::Mat();
+    }
 
-		// Find the homography matrix
-		cv::Mat homography;
-		std::vector<cv::Point2f> srcPoints, dstPoints;
-		for (int i = 0; i < charucoIds1.size(); i++)
-		{
-			for (int j = 0; j < charucoIds2.size(); j++)
-			{
-				if (charucoIds1[i] == charucoIds2[j])
-				{
-					srcPoints.push_back(charucoCorners1[i]);
-					dstPoints.push_back(charucoCorners2[j]);
-					break;
-				}
-			}
-		}
-		homography = findHomography(srcPoints, dstPoints);
-
-
-		// for (size_t j = 1; j < NUMBER_FILTERS-1; j++) // just filters 2 to 7
-		// {
-			// cv::Mat originalImage2 = image;
-			// cv::Mat undistortedImage2;
-			// undistort(originalImage2, undistortedImage2, cameraMatrix, distCoeffs);
-
-			// cv::Mat img11 = undistortedImage2;
+    // Find the homography matrix
+    cv::Mat homography;
+    std::vector<cv::Point2f> srcPoints, dstPoints;
+    for (int i = 0; i < charucoIds1.size(); i++)
+    {
+        for (int j = 0; j < charucoIds2.size(); j++)
+        {
+            if (charucoIds1[i] == charucoIds2[j])
+            {
+                srcPoints.push_back(charucoCorners1[i]);
+                dstPoints.push_back(charucoCorners2[j]);
+                break;
+            }
+        }
+    }
+    homography = findHomography(srcPoints, dstPoints);
 
 
-			// Register the two images using the homography matrix
-			cv::Mat registeredImg;
-			warpPerspective(undistortedImage, registeredImg, homography, img2.size());
+
+    cv::Mat registeredImg;
+    cv::Size registeredImgSize = cv::Size(img2.cols, img2.rows);
+    warpPerspective(undistortedImage, registeredImg, homography, img2.size());
 
 
-			//// Display the results
-			//namedWindow("img1", WINDOW_NORMAL);
-			//imshow("img1", img1);
-			//namedWindow("img2", WINDOW_NORMAL);
-			//imshow("img2", img2);
-			//namedWindow("registeredImg", WINDOW_NORMAL);
-			//imshow("registeredImg", registeredImg);
-			//waitKey(0);
+    //// Display the results
+    //namedWindow("img1", WINDOW_NORMAL);
+    //imshow("img1", img1);
+    //namedWindow("img2", WINDOW_NORMAL);
+    //imshow("img2", img2);
+    //namedWindow("registeredImg", WINDOW_NORMAL);
+    //imshow("registeredImg", registeredImg);
+    //waitKey(0);
 
-			// wrtie the registered image
-			// std::string outImPath = outRegPath + strPostImageNames[i][j];
-			// cv::imwrite(outImPath, registeredImg);
-
-			// end of image registration
-			
-		// }
-
-	// }
+    // wrtie the registered image
+    // std::string outImPath = outRegPath + strPostImageNames[i][j];
+    // cv::imwrite(outImPath, registeredImg);
     
 
     return registeredImg.clone();
-}
-
-// ROISelector implementation
-std::vector<ROISelector::PatchROI> ROISelector::selectROIs(const cv::Mat& image) {
-    std::vector<cv::Point2f> corners = selectChartCorners(image);
-    return calculatePatchROIs(corners);
-}
-
-std::vector<cv::Point2f> ROISelector::selectChartCorners(const cv::Mat& image) {
-    // For now, return placeholder corners
-    // In real implementation, use mouse callback or automatic detection
-    std::vector<cv::Point2f> corners = {
-        cv::Point2f(100, 100),   // top-left
-        cv::Point2f(500, 100),   // top-right
-        cv::Point2f(100, 400),   // bottom-left
-        cv::Point2f(500, 400)    // bottom-right
-    };
-    
-    // You would implement interactive corner selection here
-    std::cout << "Please implement interactive corner selection" << std::endl;
-    
-    return corners;
-}
-
-std::vector<ROISelector::PatchROI> ROISelector::calculatePatchROIs(const std::vector<cv::Point2f>& corners) {
-    std::vector<PatchROI> rois;
-    
-    if (corners.size() != 4) {
-        std::cerr << "Need exactly 4 corners for chart" << std::endl;
-        return rois;
-    }
-    
-    // Calculate chart dimensions
-    float width = corners[1].x - corners[0].x;
-    float height = corners[2].y - corners[0].y;
-    
-    // 6x5 grid of patches
-    int rows = 6, cols = 5;
-    float patchWidth = width / cols;
-    float patchHeight = height / rows;
-    
-    for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            PatchROI roi;
-            roi.patchId = row * cols + col;
-            
-            // Calculate patch center and create ROI (20-30 pixels from center)
-            float centerX = corners[0].x + col * patchWidth + patchWidth / 2;
-            float centerY = corners[0].y + row * patchHeight + patchHeight / 2;
-            
-            int roiSize = 25; // 25x25 pixel ROI
-            roi.rect = cv::Rect(centerX - roiSize/2, centerY - roiSize/2, roiSize, roiSize);
-            
-            rois.push_back(roi);
-        }
-    }
-    
-    return rois;
-}
-
-void ROISelector::visualizeROIs(const cv::Mat& image, const std::vector<PatchROI>& rois) {
-    cv::Mat display = image.clone();
-    if (display.channels() == 1) {
-        cv::cvtColor(display, display, cv::COLOR_GRAY2BGR);
-    }
-    
-    for (const auto& roi : rois) {
-        cv::rectangle(display, roi.rect, cv::Scalar(0, 255, 0), 2);
-        cv::putText(display, std::to_string(roi.patchId), 
-                   roi.rect.tl() + cv::Point(5, 15), 
-                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-    }
-    
-    cv::imshow("ROI Selection", display);
-    cv::waitKey(0);
 }
 
 // MultispectralProcessor implementation
@@ -484,9 +321,6 @@ void MultispectralProcessor::processDataset(const std::string& imageFolder,
     
     // Read imaging geometries to be analyzed
     auto geometriesToAnalyze = MetadataReader::readMetadata(analyzeGeometriesFile);
-    
-    // Filter geometries to analyze
-    // auto geometriesToAnalyze = MetadataReader::filterGeometries(imageGeometries, analyzeGeometriesFile);
     
     std::cout << "Processing " << geometriesToAnalyze.size() << " imaging geometries..." << std::endl;
     
@@ -513,8 +347,7 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
     
     // TODO: Load dark images based on exposure times. For now, dark noise is set to a fixed value.
     std::vector<cv::Mat> darkImages(msImages.size(),
-    cv::Mat(msImages[0].size(), msImages[0].type(), cv::Scalar(hdrParams.fixedDarkNoise)));
-    
+    cv::Mat(msImages[0].size(), msImages[0].type(), cv::Scalar(hdrParams.fixedDarkNoise)));  
 
     //------------------------------------------- HDR construction channel-wise
     std::vector<cv::Mat> hdrMSImage;
@@ -555,10 +388,19 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
         rectifiedHDRWhiteRefImage[channel] = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
     }
     
+    //------------------------------------------- ROI selection and patch analysis
+    for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
+        auto corners = roiSelector.selectChartCorners(rectifiedImage);
+        auto patches = roiSelector.calculatePatchROIs(corners);
+        roiSelector.calculatePatchAverages(rectifiedImage, patches);
 
+        // Visualize and check
+        cv::Mat roiViz = roiSelector.visualizeROIs(rectifiedImage, patches, corners);
+        cv::imshow("ROI Selection Check", roiViz);
+        cv::waitKey(0);
+    }
+    
 
-
-    // TODO: Implement ROI selection and patch analysis
     
     std::cout << "Completed processing for: " << geometry.filename << std::endl;
 }

@@ -10,6 +10,8 @@
 #include <string>
 #include <map>
 
+#include "ROISelector.h"
+
 #define NUM_ALL_MS_CHANNELS 8
 #define NUM_EFFECTIVE_MS_CHANNELS 6
 #define NUM_HDR_BRACKETS 3
@@ -79,28 +81,24 @@ public:
     bool calibrateFromImages(const std::vector<std::string>& imagePaths);
     cv::Mat rectifyImage(const cv::Mat& image);
     
-private:
-    cv::Mat cameraMatrix;
-    cv::Mat distCoeffs;
-    cv::Size patternSize = cv::Size(8, 6); // ChArUco board dimensions
-    float squareLength = 0.04f; // in meters
-    float markerLength = 0.02f; // in meters
-};
+private:    
 
-class ROISelector {
-public:
-    struct PatchROI {
-        cv::Rect rect;
-        cv::Scalar averageValue;
-        int patchId;
-    };
+    cv::Mat cameraMatrix = cv::Mat_<double>::eye(3, 3);
+	cv::Mat distCoeffs   = cv::Mat_<double>::zeros(1, 5);
+    std::string strCameraCalibTxtFile = "../data/My_camera_calib.txt";
     
-    std::vector<PatchROI> selectROIs(const cv::Mat& image);
-    void visualizeROIs(const cv::Mat& image, const std::vector<PatchROI>& rois);
-    
-private:
-    std::vector<cv::Point2f> selectChartCorners(const cv::Mat& image);
-    std::vector<PatchROI> calculatePatchROIs(const std::vector<cv::Point2f>& corners);
+
+	// ChArUco board specifications
+	int squaresX = 10;
+	int squaresY = 10;
+    cv::Size patternSize = cv::Size(squaresX, squaresY); // ChArUco board dimensions
+	float squareLength = 0.01f; // in meters
+	float markerLength = 0.006f; // in meters
+	int dictionaryId = 6;
+
+    // output path
+	std::string outRegPath = "../RegisteredImages/";
+
 };
 
 class MultispectralProcessor {

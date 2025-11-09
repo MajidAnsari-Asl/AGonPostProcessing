@@ -8,9 +8,12 @@ find_package(OpenCV REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+include_directories(include)
+
 add_executable(MultispectralProcessor 
     src/main.cpp 
     src/ImageProcessor.cpp
+    src/ROISelector.cpp
 )
 
 target_link_libraries(MultispectralProcessor ${OpenCV_LIBS})
