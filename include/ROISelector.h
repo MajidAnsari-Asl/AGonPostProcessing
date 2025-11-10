@@ -22,24 +22,30 @@ public:
     };
     
     ROISelector();
+
+    ChartCorners corners;
+    std::vector<PatchROI> patches; // For Nano Target chart (5x6 patches), brown patch at top-left is patchId 0
     
     // Interactive ROI selection
-    ChartCorners selectChartCorners(const cv::Mat& image);
+    void selectROICorners(const cv::Mat& image);
+
+    // ROI rectification
+    cv::Mat rectifyROI(const cv::Mat& image);
     
     // Calculate patch ROIs from selected corners
-    std::vector<PatchROI> calculatePatchROIs(const ChartCorners& corners, int rows = 6, int cols = 5);
+    void calculatePatchROIs(int rows = 5, int cols = 6);
     
     // Extract average values from patches
-    void calculatePatchAverages(const cv::Mat& image, std::vector<PatchROI>& patches);
+    void calculatePatchAverages(const cv::Mat& image);
     
     // Visualize ROIs on image
-    cv::Mat visualizeROIs(const cv::Mat& image, const std::vector<PatchROI>& patches, 
-                         const ChartCorners& corners = ChartCorners());
+    cv::Mat visualizeROIs(const cv::Mat& image);
     
     // Get transformation matrix for the chart
     cv::Mat getPerspectiveTransform(const ChartCorners& corners, const cv::Size& outputSize);
     
 private:
+
     // Mouse callback data
     struct SelectionData {
         cv::Mat image;

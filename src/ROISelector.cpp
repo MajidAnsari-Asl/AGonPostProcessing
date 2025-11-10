@@ -4,7 +4,7 @@
 
 ROISelector::ROISelector() {}
 
-ROISelector::ChartCorners ROISelector::selectChartCorners(const cv::Mat& image) {
+void ROISelector::selectROICorners(const cv::Mat& image) {
     SelectionData data;
     data.image = image.clone();
     data.corners.resize(4);
@@ -59,13 +59,11 @@ ROISelector::ChartCorners ROISelector::selectChartCorners(const cv::Mat& image) 
     
     cv::destroyWindow("Select Chart Corners (F5 to confirm)");
     
-    ChartCorners corners;
     corners.topLeft = data.corners[0];
     corners.topRight = data.corners[1];
     corners.bottomRight = data.corners[2];
     corners.bottomLeft = data.corners[3];
     
-    return corners;
 }
 
 void ROISelector::mouseCallback(int event, int x, int y, int flags, void* userdata) {
@@ -107,9 +105,30 @@ cv::Point2f ROISelector::findClosestCorner(const std::vector<cv::Point2f>& corne
     return closest;
 }
 
-std::vector<ROISelector::PatchROI> ROISelector::calculatePatchROIs(const ChartCorners& corners, 
-                                                                  int rows, int cols) {
-    std::vector<PatchROI> patches;
+cv::Mat ROISelector::rectifyROI(const cv::Mat& image) {
+    // Estimate chart dimensions
+    float width1 = cv::norm(corners.topRight - corners.topLeft);
+    float width2 = cv::norm(corners.bottomRight - corners.bottomLeft);
+    float height1 = cv::norm(corners.bottomLeft - corners.topLeft);
+    float height2 = cv::norm(corners.bottomRight - corners.topRight);
+    
+    float avgWidth = (width1 + width2) / 2.0f;
+    float avgHeight = (height1 + height2) / 2.0f;
+    
+    cv::Size outputSize(static_cast<int>(avgWidth), static_cast<int>(avgHeight));
+    
+    // Get perspective transform
+    cv::Mat transform = getPerspectiveTransform(corners, outputSize);
+    
+    // Warp image
+    cv::Mat rectified;
+    cv::warpPerspective(image, rectified, transform, outputSize);
+    
+    return rectified;
+}
+
+void ROISelector::calculatePatchROIs(int rows, int cols) {
+    // std::vector<PatchROI> patches;
     
     // Create perspective transform to rectangular grid
     std::vector<cv::Point2f> srcCorners = {
@@ -152,28 +171,23 @@ std::vector<ROISelector::PatchROI> ROISelector::calculatePatchROIs(const ChartCo
         }
     }
     
-    return patches;
+    // return patches;
 }
 
-void ROISelector::calculatePatchAverages(const cv::Mat& image, std::vector<PatchROI>& patches) {
-    // Get perspective transform from selected corners to rectangular grid
-    ChartCorners corners; 
-    cv::Mat transform = getPerspectiveTransform(corners, cv::Size(1000, 600)); 
+void ROISelector::calculatePatchAverages(const cv::Mat& image) {
     
     for (auto& patch : patches) {
         // Transform ROI from warped space to image space
-        std::vector<cv::Point2f> srcPoints, dstPoints;
+        std::vector<cv::Point2f> srcPoints;
         srcPoints.push_back(cv::Point2f(patch.rect.x, patch.rect.y));
         srcPoints.push_back(cv::Point2f(patch.rect.x + patch.rect.width, patch.rect.y));
         srcPoints.push_back(cv::Point2f(patch.rect.x + patch.rect.width, patch.rect.y + patch.rect.height));
         srcPoints.push_back(cv::Point2f(patch.rect.x, patch.rect.y + patch.rect.height));
         
-        cv::perspectiveTransform(srcPoints, dstPoints, transform.inv());
-        
         // Create mask for the patch area
         cv::Mat mask = cv::Mat::zeros(image.size(), CV_8UC1);
         std::vector<cv::Point> polyPoints;
-        for (const auto& p : dstPoints) {
+        for (const auto& p : srcPoints) {
             polyPoints.push_back(cv::Point(static_cast<int>(p.x), static_cast<int>(p.y)));
         }
         cv::fillConvexPoly(mask, polyPoints, 255);
@@ -199,26 +213,15 @@ cv::Mat ROISelector::getPerspectiveTransform(const ChartCorners& corners, const 
     return cv::getPerspectiveTransform(src, dst);
 }
 
-cv::Mat ROISelector::visualizeROIs(const cv::Mat& image, const std::vector<PatchROI>& patches,
-                                 const ChartCorners& corners) {
+cv::Mat ROISelector::visualizeROIs(const cv::Mat& image) {
     cv::Mat display = image.clone();
     if (display.channels() == 1) {
         cv::cvtColor(display, display, cv::COLOR_GRAY2BGR);
     }
     
-    // Draw chart corners and outline
-    if (corners.topLeft != cv::Point2f(0, 0)) { // Check if corners are valid
-        std::vector<cv::Point> polyPoints = {
-            corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft
-        };
-        cv::polylines(display, polyPoints, true, cv::Scalar(0, 255, 255), 2);
-    }
-    
     // Draw patch ROIs
     for (const auto& patch : patches) {
-        // Transform ROI corners back to image space for visualization
-        // This would require the perspective transform - simplified here
-        cv::Rect visRect = patch.rect; // This is simplified - should be transformed
+        cv::Rect visRect = patch.rect;
         
         cv::rectangle(display, visRect, cv::Scalar(0, 255, 0), 2);
         cv::putText(display, std::to_string(patch.patchId), 

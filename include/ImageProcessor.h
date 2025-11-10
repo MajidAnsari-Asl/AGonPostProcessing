@@ -119,7 +119,8 @@ public:
 private:
     void processGeometry(const ImagingGeometry& geometry,
                         const std::string& imageFolder,
-                        const std::string& whiteRefFolder);
+                        const std::string& whiteRefFolder,
+                        bool isFirstGeometry = true);
     std::vector<cv::Mat> loadChannelImages(const std::string& basePath, 
                                           const ImagingGeometry& geometry,
                                           std::vector<ImagingGeometry>& msImagesGeometries);

@@ -324,14 +324,18 @@ void MultispectralProcessor::processDataset(const std::string& imageFolder,
     
     std::cout << "Processing " << geometriesToAnalyze.size() << " imaging geometries..." << std::endl;
     
+    bool firstGeometry = true;
+
     for (const auto& geometry : geometriesToAnalyze) {
-        processGeometry(geometry, imageFolder, whiteRefFolder);
+        processGeometry(geometry, imageFolder, whiteRefFolder, firstGeometry);
+        firstGeometry = false;
     }
 }
 
 void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
                                             const std::string& imageFolder,
-                                            const std::string& whiteRefFolder) {
+                                            const std::string& whiteRefFolder,
+                                            bool isFirstGeometry) {
     
     std::cout << "Processing geometry: " << 
                 "theta_i="<< geometry.theta_i<< 
@@ -389,16 +393,33 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
     }
     
     //------------------------------------------- ROI selection and patch analysis
-    for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
-        auto corners = roiSelector.selectChartCorners(rectifiedImage);
-        auto patches = roiSelector.calculatePatchROIs(corners);
-        roiSelector.calculatePatchAverages(rectifiedImage, patches);
-
-        // Visualize and check
-        cv::Mat roiViz = roiSelector.visualizeROIs(rectifiedImage, patches, corners);
-        cv::imshow("ROI Selection Check", roiViz);
-        cv::waitKey(0);
+    if (isFirstGeometry)
+    {
+        roiSelector.selectROICorners(rectifiedHDRMSImage[3]); // Use channel 4 (CH1-CH6) for ROI selection
+        roiSelector.calculatePatchROIs();
     }
+    
+
+    for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
+
+        auto rectifiedROI = roiSelector.rectifyROI(rectifiedHDRMSImage[channel]);
+        roiSelector.calculatePatchAverages(rectifiedROI);
+
+        if (isFirstGeometry && channel == 3)
+        {
+            // Visualize and check
+            cv::Mat roiViz = roiSelector.visualizeROIs(rectifiedROI);
+            cv::imshow("ROI Selection Check", roiViz);
+            cv::waitKey(0);
+        }
+
+        // write a funstion to get patch averages 
+
+        auto rectifiedROIWhiteRef = roiSelector.rectifyROI(rectifiedHDRWhiteRefImage[channel]);
+        roiSelector.calculatePatchAverages(rectifiedROI);
+    }
+
+    
     
 
     
