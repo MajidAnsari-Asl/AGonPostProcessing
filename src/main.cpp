@@ -25,7 +25,7 @@ int main() {
         return -1;
     }
     
-    // Process dataset
+    // Process dataset, get MD reflectance
     try {
         processor.processDataset(imageFolder, whiteRefFolder, analyzeGeometriesFile);
         std::cout << "Processing completed successfully!" << std::endl;
@@ -33,6 +33,9 @@ int main() {
         std::cerr << "Error during processing: " << e.what() << std::endl;
         return -1;
     }
+
+    //TODO: Spectral reconstruction from multispectral reflectance data
+    //TODO: Save or output the reflectance data as needed
     
     return 0;
 }

@@ -24,7 +24,7 @@ public:
     ROISelector();
 
     ChartCorners corners;
-    std::vector<PatchROI> patches; // For Nano Target chart (5x6 patches), brown patch at top-left is patchId 0
+    std::vector<PatchROI> patches;
     
     // Interactive ROI selection
     void selectROICorners(const cv::Mat& image);
@@ -37,6 +37,9 @@ public:
     
     // Extract average values from patches
     void calculatePatchAverages(const cv::Mat& image);
+
+    // Get all patch averages
+    std::vector<double> getPatchAverages(void);
     
     // Visualize ROIs on image
     cv::Mat visualizeROIs(const cv::Mat& image);

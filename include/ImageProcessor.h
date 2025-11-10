@@ -117,7 +117,7 @@ public:
                        const std::string& analyzeGeometriesFile);
     
 private:
-    void processGeometry(const ImagingGeometry& geometry,
+    std::vector<std::vector<double>> processGeometry(const ImagingGeometry& geometry,
                         const std::string& imageFolder,
                         const std::string& whiteRefFolder,
                         bool isFirstGeometry = true);

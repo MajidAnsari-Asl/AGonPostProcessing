@@ -327,12 +327,12 @@ void MultispectralProcessor::processDataset(const std::string& imageFolder,
     bool firstGeometry = true;
 
     for (const auto& geometry : geometriesToAnalyze) {
-        processGeometry(geometry, imageFolder, whiteRefFolder, firstGeometry);
+        auto msReflectance = processGeometry(geometry, imageFolder, whiteRefFolder, firstGeometry);
         firstGeometry = false;
     }
 }
 
-void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
+std::vector<std::vector<double>> MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
                                             const std::string& imageFolder,
                                             const std::string& whiteRefFolder,
                                             bool isFirstGeometry) {
@@ -393,17 +393,22 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
     }
     
     //------------------------------------------- ROI selection and patch analysis
+    // ROI selection. Done only once for the first geometry
     if (isFirstGeometry)
     {
         roiSelector.selectROICorners(rectifiedHDRMSImage[3]); // Use channel 4 (CH1-CH6) for ROI selection
-        roiSelector.calculatePatchROIs();
+        roiSelector.calculatePatchROIs(5,6); // 5 rows and 6 columns of patches for NanoTarget
     }
     
+    // Patch analysis for each channel for both sample and white reference
+    std::vector<std::vector<double>> msRadiance(NUM_EFFECTIVE_MS_CHANNELS);
+    std::vector<std::vector<double>> msRadianceWhiteRef(NUM_EFFECTIVE_MS_CHANNELS);
 
     for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
 
         auto rectifiedROI = roiSelector.rectifyROI(rectifiedHDRMSImage[channel]);
         roiSelector.calculatePatchAverages(rectifiedROI);
+        msRadiance[channel] = roiSelector.getPatchAverages();
 
         if (isFirstGeometry && channel == 3)
         {
@@ -413,17 +418,34 @@ void MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
             cv::waitKey(0);
         }
 
-        // write a funstion to get patch averages 
-
         auto rectifiedROIWhiteRef = roiSelector.rectifyROI(rectifiedHDRWhiteRefImage[channel]);
         roiSelector.calculatePatchAverages(rectifiedROI);
+        msRadianceWhiteRef[channel] = roiSelector.getPatchAverages();
     }
 
+    //------------------------------------------- MS Reflectance calculation
+    std::vector<std::vector<double>> msReflectance;
     
+    for (size_t channel = 0; channel < msRadiance.size(); ++channel) {
+        std::vector<double> channelReflectance;
+        
+        for (size_t patch = 0; patch < msRadiance[channel].size(); ++patch) {
+            // Reflectance = Sample / WhiteReference
+            double refl = msRadiance[channel][patch] / msRadianceWhiteRef[channel][patch];
+            channelReflectance.push_back(refl);
+        }
+        
+        msReflectance.push_back(channelReflectance);
+    }
     
+    std::cout << "Completed processing for: " << 
+                "theta_i="<< geometry.theta_i<< 
+                ", phi_i="<< geometry.phi_i<<
+                ", theta_r="<< geometry.theta_r<<
+                ", phi_r="<< geometry.phi_r<<
+                std::endl;
 
-    
-    std::cout << "Completed processing for: " << geometry.filename << std::endl;
+    return msReflectance;
 }
 
 std::vector<cv::Mat> MultispectralProcessor::loadChannelImages(const std::string& basePath,

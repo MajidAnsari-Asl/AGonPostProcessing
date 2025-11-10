@@ -198,6 +198,14 @@ void ROISelector::calculatePatchAverages(const cv::Mat& image) {
     }
 }
 
+std::vector<double> ROISelector::getPatchAverages(void) {
+    std::vector<double> averages;
+    for (const auto& patch : patches) {
+        averages.push_back(patch.averageValue[0]); // Assuming single channel
+    }
+    return averages;
+}
+
 cv::Mat ROISelector::getPerspectiveTransform(const ChartCorners& corners, const cv::Size& outputSize) {
     std::vector<cv::Point2f> src = {
         corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft
