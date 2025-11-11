@@ -327,12 +327,15 @@ void MultispectralProcessor::processDataset(const std::string& imageFolder,
     bool firstGeometry = true;
 
     for (const auto& geometry : geometriesToAnalyze) {
-        auto msReflectance = processGeometry(geometry, imageFolder, whiteRefFolder, firstGeometry);
+        GeometryData data;
+        data.geometry = geometry;
+        data.patches = processGeometry(geometry, imageFolder, whiteRefFolder, firstGeometry);
         firstGeometry = false;
+        allData.push_back(data);
     }
 }
 
-std::vector<std::vector<double>> MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
+std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const ImagingGeometry& geometry,
                                             const std::string& imageFolder,
                                             const std::string& whiteRefFolder,
                                             bool isFirstGeometry) {
@@ -424,18 +427,16 @@ std::vector<std::vector<double>> MultispectralProcessor::processGeometry(const I
     }
 
     //------------------------------------------- MS Reflectance calculation
-    std::vector<std::vector<double>> msReflectance;
-    
-    for (size_t channel = 0; channel < msRadiance.size(); ++channel) {
-        std::vector<double> channelReflectance;
-        
-        for (size_t patch = 0; patch < msRadiance[channel].size(); ++patch) {
+    std::vector<PatchSpectrum> patches;
+    for (size_t patch = 0; patch < msRadiance[0].size(); ++patch) {
+        PatchSpectrum ps;
+        ps.patchId = patch;
+        for (size_t channel = 0; channel < msRadiance.size(); ++channel) {
             // Reflectance = Sample / WhiteReference
             double refl = msRadiance[channel][patch] / msRadianceWhiteRef[channel][patch];
-            channelReflectance.push_back(refl);
+            ps.channelValues.push_back(refl);
         }
-        
-        msReflectance.push_back(channelReflectance);
+        patches.push_back(ps);
     }
     
     std::cout << "Completed processing for: " << 
@@ -445,7 +446,7 @@ std::vector<std::vector<double>> MultispectralProcessor::processGeometry(const I
                 ", phi_r="<< geometry.phi_r<<
                 std::endl;
 
-    return msReflectance;
+    return patches;
 }
 
 std::vector<cv::Mat> MultispectralProcessor::loadChannelImages(const std::string& basePath,

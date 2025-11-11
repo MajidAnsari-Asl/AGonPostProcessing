@@ -40,6 +40,17 @@ struct HDRParams {
     double maxDigCount = (1 << 16) - 1 - fixedDarkNoise - upDCMargin;
 };
 
+struct PatchSpectrum {
+    int patchId;
+    // int geometryId; 
+    std::vector<double> channelValues; // [ch0, ch1, ... chN]
+};
+
+struct GeometryData {
+    ImagingGeometry geometry;
+    std::vector<PatchSpectrum> patches;
+};
+
 class MetadataReader {
 public:
     static std::vector<ImagingGeometry> readMetadata(const std::string& filepath);
@@ -108,6 +119,7 @@ private:
     ImageRectifier imageRectifier;
     ROISelector roiSelector;
     HDRParams hdrParams;
+    std::vector<GeometryData> allData;
     
 public:
     MultispectralProcessor();
@@ -117,7 +129,7 @@ public:
                        const std::string& analyzeGeometriesFile);
     
 private:
-    std::vector<std::vector<double>> processGeometry(const ImagingGeometry& geometry,
+    std::vector<PatchSpectrum> processGeometry(const ImagingGeometry& geometry,
                         const std::string& imageFolder,
                         const std::string& whiteRefFolder,
                         bool isFirstGeometry = true);
