@@ -12,11 +12,11 @@ void ROISelector::selectROICorners(const cv::Mat& image) {
     data.currentCorner = 0;
     
     // Create window
-    cv::namedWindow("Select Chart Corners (F5 to confirm)");
-    cv::setMouseCallback("Select Chart Corners (F5 to confirm)", mouseCallback, &data);
+    cv::namedWindow("Select Chart Corners (c to confirm)");
+    cv::setMouseCallback("Select Chart Corners (c to confirm)", mouseCallback, &data);
     
     std::cout << "Select 4 corners in order: Top-Left, Top-Right, Bottom-Right, Bottom-Left\n";
-    std::cout << "Press F5 when done, ESC to cancel\n";
+    std::cout << "Press c when done, ESC to cancel\n";
     
     while (!data.completed) {
         cv::Mat display = data.image.clone();
@@ -24,7 +24,7 @@ void ROISelector::selectROICorners(const cv::Mat& image) {
         // Draw instructions
         cv::putText(display, "Select: " + cornerNames[data.currentCorner], 
                    cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
-        cv::putText(display, "F5: Confirm, ESC: Cancel", 
+        cv::putText(display, "c: Confirm, ESC: Cancel", 
                    cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 0), 1);
         
         // Draw selected corners
@@ -43,21 +43,21 @@ void ROISelector::selectROICorners(const cv::Mat& image) {
             }
         }
         
-        cv::imshow("Select Chart Corners (F5 to confirm)", display);
+        cv::imshow("Select Chart Corners (c to confirm)", display);
         
         int key = cv::waitKey(10);
         if (key == 27) { // ESC
-            cv::destroyWindow("Select Chart Corners (F5 to confirm)");
-            return ChartCorners(); // Return empty
+            cv::destroyWindow("Select Chart Corners (c to confirm)");
+            return; 
         }
-        if (key == 65474) { // F5
+        if (key == 'c' || key == 'C') { // c/C to confirm
             if (data.currentCorner == 4) {
                 data.completed = true;
             }
         }
     }
     
-    cv::destroyWindow("Select Chart Corners (F5 to confirm)");
+    cv::destroyWindow("Select Chart Corners (c to confirm)");
     
     corners.topLeft = data.corners[0];
     corners.topRight = data.corners[1];

@@ -107,7 +107,7 @@ cv::Mat HDRConstructor::constructHDR(const std::vector<cv::Mat>& images,
     }
     
     cv::Size imageSize = images[0].size();
-    radianceMap = cv::Mat::zeros(imageSize, CV_32FC(images[0].channels()));
+    cv::Mat radianceMap = cv::Mat::zeros(imageSize, CV_32FC(images[0].channels()));
     cv::Mat weightSum = cv::Mat::zeros(imageSize, CV_32FC(images[0].channels()));
     
     // Process from longest to shortest exposure
@@ -143,7 +143,7 @@ cv::Mat HDRConstructor::constructHDR(const std::vector<cv::Mat>& images,
     // Handle remaining zeros (if any)
     cv::Mat zeroMask = (weightSum == 0);
     radianceMap.setTo(0, zeroMask);
-    
+
     return radianceMap;
 }
 
@@ -185,7 +185,7 @@ bool ImageRectifier::calibrateFromImages(const std::vector<std::string>& imagePa
 }
 
 cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
-	
+
 	cv::aruco::Dictionary dict =
 		cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_250);
     // create a Ptr from the Dictionary object
@@ -226,14 +226,24 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
     std::vector<int> ids1;
     std::vector<cv::Point2f> charucoCorners1;
     std::vector<int> charucoIds1;
-    cv::aruco::detectMarkers(img1, dictionary, corners1, ids1);
+
+    cv::Mat img1_8u;
+
+    // CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    cv::Mat img1_norm;
+    cv::normalize(img1, img1_norm, 0, 255, cv::NORM_MINMAX, CV_8U);
+    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
+    clahe->setClipLimit(4.0);  // Prevent over-enhancement
+    clahe->apply(img1_norm, img1_8u);
+
+    cv::aruco::detectMarkers(img1_8u, dictionary, corners1, ids1);
     if (ids1.size() >= 4) // 4 corners should be detected at least, otherwise returns empty matrix
     {
 
-        cv::aruco::interpolateCornersCharuco(corners1, ids1, img1, charucoBoardPtr, charucoCorners1, charucoIds1);
+        cv::aruco::interpolateCornersCharuco(corners1, ids1, img1_8u, charucoBoardPtr, charucoCorners1, charucoIds1);
         if (charucoIds1.size() > 0)
         {
-            cv::aruco::drawDetectedCornersCharuco(img1, charucoCorners1, charucoIds1);
+            cv::aruco::drawDetectedCornersCharuco(img1_8u, charucoCorners1, charucoIds1);
         }
     }
     else
@@ -374,6 +384,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
             singleCHDarkImages.push_back(darkImages[idx]);
 
         }
+
         //construct HDR for this channel
         cv::Mat img = hdrConstructor.constructHDR(singleCHImages, exposureTimes, singleCHDarkImages);
         if (!img.empty()) {
@@ -382,8 +393,9 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         //construct HDR for this channel's white reference
         cv::Mat img2 = hdrConstructor.constructHDR(singleCHWhiteRefImages, exposureTimes, singleCHDarkImages);
         if (!img2.empty()) {
-            hdrWhiteRefImage.push_back(img);
+            hdrWhiteRefImage.push_back(img2);
         }
+
     }
 
     //------------------------------------------- Image rectification
@@ -391,8 +403,11 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
     std::vector<cv::Mat> rectifiedHDRWhiteRefImage;
 
     for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
-        rectifiedHDRMSImage[channel] = imageRectifier.rectifyImage(hdrMSImage[channel]);
-        rectifiedHDRWhiteRefImage[channel] = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
+
+        auto imRec = imageRectifier.rectifyImage(hdrMSImage[channel]);
+        rectifiedHDRMSImage.push_back(imRec);
+        auto imRecWR = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
+        rectifiedHDRWhiteRefImage.push_back(imRecWR);
     }
     
     //------------------------------------------- ROI selection and patch analysis
@@ -413,7 +428,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         roiSelector.calculatePatchAverages(rectifiedROI);
         msRadiance[channel] = roiSelector.getPatchAverages();
 
-        if (isFirstGeometry && channel == 3)
+        if (channel == 3)
         {
             // Visualize and check
             cv::Mat roiViz = roiSelector.visualizeROIs(rectifiedROI);
@@ -422,7 +437,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         }
 
         auto rectifiedROIWhiteRef = roiSelector.rectifyROI(rectifiedHDRWhiteRefImage[channel]);
-        roiSelector.calculatePatchAverages(rectifiedROI);
+        roiSelector.calculatePatchAverages(rectifiedROIWhiteRef);
         msRadianceWhiteRef[channel] = roiSelector.getPatchAverages();
     }
 

@@ -80,10 +80,10 @@ public:
     cv::Mat constructHDR(const std::vector<cv::Mat>& images, 
                         const std::vector<double>& exposureTimes,
                         const std::vector<cv::Mat>& darkImages);
-    cv::Mat getRadianceMap() const { return radianceMap; }
+    // cv::Mat getRadianceMap() const { return radianceMap; }
     
 private:
-    cv::Mat radianceMap;
+    // cv::Mat radianceMap;
     cv::Mat createMask(const cv::Mat& image) const;
 };
 
