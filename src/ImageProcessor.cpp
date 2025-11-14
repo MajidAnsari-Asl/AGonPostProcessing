@@ -218,7 +218,10 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
 
     // image registration using ChArUco board;
     // Load the images
-    cv::Mat img1 = undistortedImage;
+    // cv::Mat img1 = undistortedImage;
+    // cv::imshow("rectifRefImage", rectifRefImage); cv::waitKey(0);
+
+    cv::Mat img1 = rectifRefImage;
     cv::Mat img2 = imageCharucoBoard;
 
     // Detect the ChArUco board corners in the first image
@@ -228,13 +231,8 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
     std::vector<int> charucoIds1;
 
     cv::Mat img1_8u;
-
-    // CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    cv::Mat img1_norm;
-    cv::normalize(img1, img1_norm, 0, 255, cv::NORM_MINMAX, CV_8U);
-    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
-    clahe->setClipLimit(4.0);  // Prevent over-enhancement
-    clahe->apply(img1_norm, img1_8u);
+    
+    img1.convertTo(img1_8u, CV_8U, 1.0/255.0); // convert to 8-bit image
 
     cv::aruco::detectMarkers(img1_8u, dictionary, corners1, ids1);
     if (ids1.size() >= 4) // 4 corners should be detected at least, otherwise returns empty matrix
@@ -366,6 +364,8 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
     std::vector<cv::Mat> darkImages(msImages.size(),
     cv::Mat(msImages[0].size(), msImages[0].type(), cv::Scalar(hdrParams.fixedDarkNoise)));  
 
+    imageRectifier.rectifRefImage = msImages[3].clone(); // take channel 4 in first bracket image as reference for rectification
+
     //------------------------------------------- HDR construction channel-wise
     std::vector<cv::Mat> hdrMSImage;
     std::vector<cv::Mat> hdrWhiteRefImage;
@@ -408,6 +408,19 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         rectifiedHDRMSImage.push_back(imRec);
         auto imRecWR = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
         rectifiedHDRWhiteRefImage.push_back(imRecWR);
+
+
+        // save images scale for visualization only
+        cv::Mat displayImage;
+        double minVal, maxVal;
+        cv::minMaxLoc(imRec, &minVal, &maxVal);
+        imRec.convertTo(displayImage, CV_8U, 255.0/(maxVal-minVal), -minVal*255.0/(maxVal-minVal));
+        cv::imwrite("../results/RegImages/im_" + std::to_string(geometry.theta_i)+"_"
+                                      + std::to_string(geometry.phi_i)+"_" 
+                                      + std::to_string(geometry.theta_r)+"_"
+                                      + std::to_string(geometry.phi_r)+"_CH"+std::to_string(channel+2)
+                                      + ".png", displayImage);
+
     }
     
     //------------------------------------------- ROI selection and patch analysis

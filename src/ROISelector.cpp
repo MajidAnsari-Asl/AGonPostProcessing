@@ -158,9 +158,9 @@ void ROISelector::calculatePatchROIs(int rows, int cols) {
             float centerX = (col + 0.5f) * patchWidth;
             float centerY = (row + 0.5f) * patchHeight;
             
-            // Use 50% of central pixels
-            int roiWidth = static_cast<int>(patchWidth * 0.5f);
-            int roiHeight = static_cast<int>(patchHeight * 0.5f);
+            // Use 33% of central pixels, one third of patch size in each dimension
+            int roiWidth = static_cast<int>(patchWidth * 0.33f);
+            int roiHeight = static_cast<int>(patchHeight * 0.33f);
             
             // Create ROI in warped space (centered)
             cv::Rect warpedROI(centerX - roiWidth/2, centerY - roiHeight/2, roiWidth, roiHeight);
