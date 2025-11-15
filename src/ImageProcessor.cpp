@@ -217,10 +217,7 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
     undistort(image, undistortedImage, cameraMatrix, distCoeffs);// // 4th(j=3) filter camera matrix is used for all channels. could be channelwise later
 
     // image registration using ChArUco board;
-    // Load the images
     // cv::Mat img1 = undistortedImage;
-    // cv::imshow("rectifRefImage", rectifRefImage); cv::waitKey(0);
-
     cv::Mat img1 = rectifRefImage;
     cv::Mat img2 = imageCharucoBoard;
 
@@ -289,26 +286,23 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
     }
     homography = findHomography(srcPoints, dstPoints);
 
+    // Calculate sample height offset correction
+    double sampleHeight = 1.0; // mm
+    double workingDistance = 450.0; // mm (camera distance)
+    double scaleCorrection = workingDistance / (workingDistance - sampleHeight);
+
+    // Apply scaling to registration
+    cv::Mat scaleMat = (cv::Mat_<double>(3,3) << 
+        scaleCorrection, 0, 0,
+        0, scaleCorrection, 0, 
+        0, 0, 1);
+
+    cv::Mat correctedHomography = scaleMat * homography;
 
 
     cv::Mat registeredImg;
     cv::Size registeredImgSize = cv::Size(img2.cols, img2.rows);
-    warpPerspective(undistortedImage, registeredImg, homography, img2.size());
-
-
-    //// Display the results
-    //namedWindow("img1", WINDOW_NORMAL);
-    //imshow("img1", img1);
-    //namedWindow("img2", WINDOW_NORMAL);
-    //imshow("img2", img2);
-    //namedWindow("registeredImg", WINDOW_NORMAL);
-    //imshow("registeredImg", registeredImg);
-    //waitKey(0);
-
-    // wrtie the registered image
-    // std::string outImPath = outRegPath + strPostImageNames[i][j];
-    // cv::imwrite(outImPath, registeredImg);
-    
+    warpPerspective(undistortedImage, registeredImg, correctedHomography, img2.size());
 
     return registeredImg.clone();
 }
