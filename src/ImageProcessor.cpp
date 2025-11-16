@@ -12,6 +12,10 @@ namespace fs = std::filesystem;
 std::vector<ImagingGeometry> MetadataReader::readMetadata(const std::string& filepath) {
     std::vector<ImagingGeometry> geometries;
     std::ifstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filepath << std::endl;
+        return {};
+    }
     std::string line;
     
     // Skip header
@@ -184,9 +188,45 @@ bool ImageRectifier::calibrateFromImages(const std::vector<std::string>& imagePa
     return true;
 }
 
-cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
+cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image, double h) {
 
-	cv::aruco::Dictionary dict =
+    // ---------------------------------------------------------------
+    // 1. Check images
+    // ---------------------------------------------------------------
+    if(image.empty())
+    {
+        std::cerr << "Image sent to rectifyImage2() has issue. \n";
+        return cv::Mat();
+    }
+
+    if(rectifRefImage.empty())
+    {
+        std::cerr << "Rectification reference image has issue in rectifyImage2().\n";
+        return cv::Mat();
+    }
+
+    // ---------------------------------------------------------------
+    // 2. Load camera intrinsics
+    // ---------------------------------------------------------------
+    cv::Mat cameraMatrix, distCoeffs;
+    cv::FileStorage fs(strCameraCalibTxtFile, cv::FileStorage::READ);
+    if (!fs.isOpened())
+	{
+		std::cerr << "Error opening file My_camera_calib.txt!" << std::endl;
+        return cv::Mat();
+	}
+    fs["camera_matrix"] >> cameraMatrix;
+    fs["distortion_coefficients"] >> distCoeffs;
+    fs.release();
+
+    // camera undistortion
+    cv::Mat undistortedImage;
+    undistort(image, undistortedImage, cameraMatrix, distCoeffs);
+
+    // ---------------------------------------------------------------
+    // 3. Create ChArUco board and dictionary
+    // ---------------------------------------------------------------
+    cv::aruco::Dictionary dict =
 		cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_250);
     // create a Ptr from the Dictionary object
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::makePtr<cv::aruco::Dictionary>(dict);
@@ -195,116 +235,125 @@ cv::Mat ImageRectifier::rectifyImage(const cv::Mat& image) {
 	cv::aruco::CharucoBoard charucoBoard =
 		cv::aruco::CharucoBoard(patternSize, squareLength, markerLength, dict);
     charucoBoard.setLegacyPattern(true);
-    cv::Ptr<cv::aruco::CharucoBoard> charucoBoardPtr = cv::makePtr<cv::aruco::CharucoBoard>(charucoBoard);
+    cv::Ptr<cv::aruco::CharucoBoard> board = cv::makePtr<cv::aruco::CharucoBoard>(charucoBoard);
 
-    // read the image of ChArUco board
-	cv::Mat imageCharucoBoard;
-	imageCharucoBoard = cv::imread("../data/MyChArUco_10by10_1cm_0.6cm_20230303_300dpi.tiff");
 
-	// read camera calibration matrices
-	// help from: https://docs.opencv.org/4.x/dd/d74/tutorial_file_input_output_with_xml_yml.html
-	cv::FileStorage fs(strCameraCalibTxtFile, cv::FileStorage::READ);
-	if (!fs.isOpened())
-	{
-		std::cerr << "Error opening file My_camera_calib.txt!" << std::endl;
+    // ---------------------------------------------------------------
+    // 4. Detect markers
+    // ---------------------------------------------------------------
+
+    // convert to 8-bit image
+    cv::Mat img1_8u;    
+    rectifRefImage.convertTo(img1_8u, CV_8U, 1.0/255.0); 
+
+    std::vector<int> markerIds;
+    std::vector<std::vector<cv::Point2f>> markerCorners;
+    cv::aruco::detectMarkers(img1_8u, dictionary, markerCorners, markerIds);
+
+    if(markerIds.empty())
+    {
+        std::cerr << "No markers detected.\n";
         return cv::Mat();
-	}
-	fs["camera_matrix"] >> cameraMatrix;                                      // Read cv::Mat
-	fs["distortion_coefficients"] >> distCoeffs;
-	fs.release();                                       // explicit close
+    }
 
-    cv::Mat undistortedImage;
-    undistort(image, undistortedImage, cameraMatrix, distCoeffs);// // 4th(j=3) filter camera matrix is used for all channels. could be channelwise later
+    // ---------------------------------------------------------------
+    // 5. Refine with ChArUco corners
+    // ---------------------------------------------------------------
+    std::vector<cv::Point2f> charucoCorners;
+    std::vector<int> charucoIds;
 
-    // image registration using ChArUco board;
-    // cv::Mat img1 = undistortedImage;
-    cv::Mat img1 = rectifRefImage;
-    cv::Mat img2 = imageCharucoBoard;
+    cv::aruco::interpolateCornersCharuco(markerCorners, markerIds,
+                                         img1_8u, board,
+                                         charucoCorners, charucoIds);
 
-    // Detect the ChArUco board corners in the first image
-    std::vector<std::vector<cv::Point2f>> corners1;
-    std::vector<int> ids1;
-    std::vector<cv::Point2f> charucoCorners1;
-    std::vector<int> charucoIds1;
+    if(charucoIds.empty())
+    {
+        std::cerr << "No ChArUco corners detected.\n";
+        return cv::Mat();
+    }
 
-    cv::Mat img1_8u;
+    // ---------------------------------------------------------------
+    // 6. Estimate pose (rvec/tvec) of the board plane
+    // ---------------------------------------------------------------
+    cv::Vec3d rvec_board, tvec_board;
+    bool valid = cv::aruco::estimatePoseCharucoBoard(
+                     charucoCorners, charucoIds,
+                     board,
+                     cameraMatrix, distCoeffs,
+                     rvec_board, tvec_board);
+
+    if(!valid)
+    {
+        std::cerr << "Pose estimation failed.\n";
+        return cv::Mat();
+    }
+
+    // ---------------------------------------------------------------
+    // 7. Compute the sample plane pose (offset along board normal)
+    // ---------------------------------------------------------------
+    cv::Mat R;
+    cv::Rodrigues(rvec_board, R);   // board rotation matrix
+
+    // Board’s local Z-axis (the board normal)
+    cv::Mat boardNormalLocal = (cv::Mat_<double>(3,1) << 0, 0, 1);
+
+    // Board normal in camera frame
+    cv::Mat n_cam = R * boardNormalLocal;
+
+    // Offset translation
+    cv::Mat t_board = (cv::Mat_<double>(3,1) << tvec_board[0], tvec_board[1], tvec_board[2]);
+    cv::Mat t_sample = t_board + h * n_cam;
+
+    cv::Vec3d tvec_sample(
+        t_sample.at<double>(0),
+        t_sample.at<double>(1),
+        t_sample.at<double>(2)
+    );
+
+    // Sample orientation is the same as board orientation
+    cv::Vec3d rvec_sample = rvec_board;
+
+    // ---------------------------------------------------------------
+    // 8. Warp sample image into the board frame (top-down view)
+    // ---------------------------------------------------------------
     
-    img1.convertTo(img1_8u, CV_8U, 1.0/255.0); // convert to 8-bit image
+    // Define output resolution (in pixels per meter or similar)
+    float pixelsPerMeter = 15600.0f;  // pixels per meter
+    int outWidth  = int(squaresX * squareLength * pixelsPerMeter);
+    int outHeight = int(squaresY * squareLength * pixelsPerMeter);
 
-    cv::aruco::detectMarkers(img1_8u, dictionary, corners1, ids1);
-    if (ids1.size() >= 4) // 4 corners should be detected at least, otherwise returns empty matrix
-    {
+    // Prepare 4 board corners in board coordinates (Z=0)
+    std::vector<cv::Point3f> boardCorners3D = {
+        {0, 0, 0},
+        {squaresX * squareLength, 0, 0},
+        {squaresX * squareLength, squaresY * squareLength, 0},
+        {0, squaresY * squareLength, 0}
+    };
 
-        cv::aruco::interpolateCornersCharuco(corners1, ids1, img1_8u, charucoBoardPtr, charucoCorners1, charucoIds1);
-        if (charucoIds1.size() > 0)
-        {
-            cv::aruco::drawDetectedCornersCharuco(img1_8u, charucoCorners1, charucoIds1);
-        }
-    }
-    else
-    {
-        std::cerr << "Error detecting ChArUco corners in the image!" << std::endl;
-        return cv::Mat();
-    }
+    // Project them using the **sample** pose (corrected for thickness)
+    std::vector<cv::Point2f> projectedCorners;
+    cv::projectPoints(boardCorners3D, rvec_sample, tvec_sample,
+                      cameraMatrix, distCoeffs, projectedCorners);
 
-    // Detect the ChArUco board corners in the second image////////////////////////// probably can be done once as it is fixed in all loop itterations, CORRECT LATER
-    std::vector<std::vector<cv::Point2f>> corners2;
-    std::vector<int> ids2;
-    std::vector<cv::Point2f> charucoCorners2;
-    std::vector<int> charucoIds2;
+    // Destination coordinates in the rectified (top-down) image
+    std::vector<cv::Point2f> dstCorners = {
+        {0, 0},
+        {float(outWidth - 1), 0},
+        {float(outWidth - 1), float(outHeight - 1)},
+        {0, float(outHeight - 1)}
+    };
 
-    cv::aruco::detectMarkers(img2, dictionary, corners2, ids2);
-    if (ids2.size() >= 4)
-    {
+    // Homography between camera image → board-aligned view
+    cv::Mat H = cv::getPerspectiveTransform(projectedCorners, dstCorners);
 
-        cv::aruco::interpolateCornersCharuco(corners2, ids2, img2, charucoBoardPtr, charucoCorners2, charucoIds2);
-        if (charucoIds2.size() > 0)
-        {
-            cv::aruco::drawDetectedCornersCharuco(img2, charucoCorners2, charucoIds2);
-        }
-    }
-    else
-    {
-        std::cerr << "Error detecting ChArUco corners in the ChArUco reference image!" << std::endl;
-        return cv::Mat();
-    }
-
-    // Find the homography matrix
-    cv::Mat homography;
-    std::vector<cv::Point2f> srcPoints, dstPoints;
-    for (int i = 0; i < charucoIds1.size(); i++)
-    {
-        for (int j = 0; j < charucoIds2.size(); j++)
-        {
-            if (charucoIds1[i] == charucoIds2[j])
-            {
-                srcPoints.push_back(charucoCorners1[i]);
-                dstPoints.push_back(charucoCorners2[j]);
-                break;
-            }
-        }
-    }
-    homography = findHomography(srcPoints, dstPoints);
-
-    // Calculate sample height offset correction
-    double sampleHeight = 1.0; // mm
-    double workingDistance = 450.0; // mm (camera distance)
-    double scaleCorrection = workingDistance / (workingDistance - sampleHeight);
-
-    // Apply scaling to registration
-    cv::Mat scaleMat = (cv::Mat_<double>(3,3) << 
-        scaleCorrection, 0, 0,
-        0, scaleCorrection, 0, 
-        0, 0, 1);
-
-    cv::Mat correctedHomography = scaleMat * homography;
+    cv::Mat warped;
+    cv::warpPerspective(undistortedImage, warped, H,
+                        cv::Size(outWidth, outHeight),
+                        cv::INTER_LINEAR,
+                        cv::BORDER_CONSTANT);
 
 
-    cv::Mat registeredImg;
-    cv::Size registeredImgSize = cv::Size(img2.cols, img2.rows);
-    warpPerspective(undistortedImage, registeredImg, correctedHomography, img2.size());
-
-    return registeredImg.clone();
+    return warped.clone();
 }
 
 // MultispectralProcessor implementation
@@ -398,7 +447,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
 
     for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
 
-        auto imRec = imageRectifier.rectifyImage(hdrMSImage[channel]);
+        auto imRec = imageRectifier.rectifyImage(hdrMSImage[channel], -0.00152);  // sample thickness in meters (1.52 mm)
         rectifiedHDRMSImage.push_back(imRec);
         auto imRecWR = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
         rectifiedHDRWhiteRefImage.push_back(imRecWR);

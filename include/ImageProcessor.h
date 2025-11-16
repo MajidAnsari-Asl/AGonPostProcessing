@@ -90,7 +90,7 @@ private:
 class ImageRectifier {
 public:
     bool calibrateFromImages(const std::vector<std::string>& imagePaths);
-    cv::Mat rectifyImage(const cv::Mat& image);
+    cv::Mat rectifyImage(const cv::Mat& image, double h=0.0);
 
     cv::Mat rectifRefImage; // Reference image for rectification
     
