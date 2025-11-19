@@ -1,14 +1,16 @@
 #include "ImageProcessor.h"
+#include "SpectralReconstructor.h"
 #include <iostream>
 
 int main() {
     std::cout << "Multispectral Image Processing Pipeline" << std::endl;
     
     // Configuration
-    std::string imageFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251026_231723";
+    std::string imageFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251027_174625";
     std::string whiteRefFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251026_175244";
     std::string calibFile = "../data/My_camera_calib.txt";
     std::string analyzeGeometriesFile = "../data/analyzeGeometries.txt";
+    std::string outputSpectralDataFile = "../results/NanoTarget/multiSpectralReflectance_NanoTarget_TopRightRotated.txt";
 
     // Set HDR parameters
     HDRParams hdrParams;
@@ -34,8 +36,31 @@ int main() {
         return -1;
     }
 
-    //TODO: Spectral reconstruction from multispectral reflectance data
-    //TODO: Save or output the reflectance data as needed
+     
+    // ---------------------------------------------------------------
+    // Save or output the reflectance data
+    // ---------------------------------------------------------------
+    processor.writeSpectralData(outputSpectralDataFile);
+
+    
+    // ---------------------------------------------------------------
+    // Spectral reconstruction from multispectral reflectance data
+    // ---------------------------------------------------------------
+    // Load your STUD dataset
+
+    // // Create reconstructor
+    // SpectralReconstructor reconstructor;
+    // reconstructor.initialize();
+
+
+    // // Reconstruct new multispectral data
+    // cv::Mat myMSData = loadMyMultispectralData();
+    // cv::Mat hyperspectral = reconstructor.reconstruct(myMSData);
+
+    // // Evaluate reconstruction
+    // auto results = reconstructor.evaluate(trueReflectance, hyperspectral);
+    // std::cout << "RMSE: " << results.rmse << " GFC: " << results.gfc 
+    //         << " ΔE00: " << results.deltaE00 << std::endl;
     
     return 0;
 }

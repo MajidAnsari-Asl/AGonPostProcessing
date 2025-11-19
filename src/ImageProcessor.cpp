@@ -558,3 +558,42 @@ std::vector<cv::Mat> MultispectralProcessor::loadChannelImages(const std::string
     
     return images;
 }
+
+void MultispectralProcessor::writeSpectralData(const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+    
+    // Write header
+    file << "theta_i,phi_i,theta_r,phi_r,patchID";
+    for (int i = 1; i <= 6; ++i) {
+        file << ",F" << i;
+    }
+    file << "\n";
+    
+    // Write data
+    for (const auto& geometryData : allData) {
+        const auto& geo = geometryData.geometry;
+        for (const auto& patch : geometryData.patches) {
+            file << geo.theta_i << "," << geo.phi_i << ","
+                 << geo.theta_r << "," << geo.phi_r << ","
+                 << patch.patchId;
+            
+            // Write MS channels F1-F6
+            for (int ch = 0; ch < 6 && ch < patch.channelValues.size(); ++ch) {
+                file << "," << patch.channelValues[ch];
+            }
+            
+            // Fill remaining channels if less than 6
+            for (int ch = patch.channelValues.size(); ch < 6; ++ch) {
+                file << ",0";
+            }
+            file << "\n";
+        }
+    }
+    
+    file.close();
+    std::cout << "Spectral data written to " << filename << std::endl;
+}

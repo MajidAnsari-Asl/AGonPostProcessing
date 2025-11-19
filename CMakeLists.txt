@@ -14,6 +14,7 @@ add_executable(MultispectralProcessor
     src/main.cpp 
     src/ImageProcessor.cpp
     src/ROISelector.cpp
+    src/SpectralReconstructor.cpp
 )
 
 target_link_libraries(MultispectralProcessor ${OpenCV_LIBS})

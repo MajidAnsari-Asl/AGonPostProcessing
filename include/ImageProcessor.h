@@ -129,6 +129,7 @@ public:
     void processDataset(const std::string& imageFolder, 
                        const std::string& whiteRefFolder,
                        const std::string& analyzeGeometriesFile);
+    void writeSpectralData(const std::string& filename);
     
 private:
     std::vector<PatchSpectrum> processGeometry(const ImagingGeometry& geometry,
