@@ -143,6 +143,16 @@ void ROISelector::calculatePatchROIs(int rows, int cols) {
     
     float avgWidth = (width1 + width2) / 2.0f;
     float avgHeight = (height1 + height2) / 2.0f;
+
+    // added for one patch at center of ROI for Chemeleon target
+    if (rows == 1 && cols == 1) {
+        PatchROI patch;
+        patch.patchId = 0; 
+        patch.rect = cv::Rect(static_cast<int>(avgWidth/2 - avgWidth/6), static_cast<int>(avgHeight/2 - avgWidth/6), static_cast<int>(avgWidth/3), static_cast<int>(avgWidth/3));
+        patch.center = cv::Point2f(avgWidth/2, avgHeight/2);
+        patches.push_back(patch);
+        return;
+    }
     
     // Calculate patch dimensions
     float patchWidth = avgWidth / cols;
@@ -177,7 +187,7 @@ void ROISelector::calculatePatchROIs(int rows, int cols) {
 void ROISelector::calculatePatchAverages(const cv::Mat& image) {
     
     for (auto& patch : patches) {
-        // Transform ROI from warped space to image space
+        // 
         std::vector<cv::Point2f> srcPoints;
         srcPoints.push_back(cv::Point2f(patch.rect.x, patch.rect.y));
         srcPoints.push_back(cv::Point2f(patch.rect.x + patch.rect.width, patch.rect.y));

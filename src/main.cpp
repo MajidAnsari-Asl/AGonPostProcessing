@@ -6,11 +6,11 @@ int main() {
     std::cout << "Multispectral Image Processing Pipeline" << std::endl;
     
     // Configuration
-    std::string imageFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251027_174625";
-    std::string whiteRefFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251026_175244";
+    std::string imageFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251025_155918";
+    std::string whiteRefFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251025_213901";
     std::string calibFile = "../data/My_camera_calib.txt";
     std::string analyzeGeometriesFile = "../data/analyzeGeometries.txt";
-    std::string outputSpectralDataFile = "../results/NanoTarget/multiSpectralReflectance_NanoTarget_TopRightRotated.txt";
+    std::string outputSpectralDataFile = "../results/NanoTarget/multiSpectralReflectance_Chamelion_45Degree_GON360Patch.txt";
 
     // Set HDR parameters
     HDRParams hdrParams;

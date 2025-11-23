@@ -447,7 +447,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
 
     for (int channel = 0; channel < NUM_EFFECTIVE_MS_CHANNELS; ++channel) {
 
-        auto imRec = imageRectifier.rectifyImage(hdrMSImage[channel], -0.00152);  // sample thickness in meters (1.52 mm)
+        auto imRec = imageRectifier.rectifyImage(hdrMSImage[channel], -0.0008);  // sample thickness in meters (-0.00152 for 1.52 mm)
         rectifiedHDRMSImage.push_back(imRec);
         auto imRecWR = imageRectifier.rectifyImage(hdrWhiteRefImage[channel]);
         rectifiedHDRWhiteRefImage.push_back(imRecWR);
@@ -458,11 +458,11 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         double minVal, maxVal;
         cv::minMaxLoc(imRec, &minVal, &maxVal);
         imRec.convertTo(displayImage, CV_8U, 255.0/(maxVal-minVal), -minVal*255.0/(maxVal-minVal));
-        cv::imwrite("../results/RegImages/im_" + std::to_string(geometry.theta_i)+"_"
-                                      + std::to_string(geometry.phi_i)+"_" 
-                                      + std::to_string(geometry.theta_r)+"_"
-                                      + std::to_string(geometry.phi_r)+"_CH"+std::to_string(channel+2)
-                                      + ".png", displayImage);
+        // cv::imwrite("../results/RegImages/im_" + std::to_string(geometry.theta_i)+"_"
+        //                               + std::to_string(geometry.phi_i)+"_" 
+        //                               + std::to_string(geometry.theta_r)+"_"
+        //                               + std::to_string(geometry.phi_r)+"_CH"+std::to_string(channel+2)
+        //                               + ".png", displayImage);
 
     }
     
@@ -471,7 +471,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
     if (isFirstGeometry)
     {
         roiSelector.selectROICorners(rectifiedHDRMSImage[3]); // Use channel 4 (CH1-CH6) for ROI selection
-        roiSelector.calculatePatchROIs(5,6); // 5 rows and 6 columns of patches for NanoTarget
+        roiSelector.calculatePatchROIs(1,1); // 5 rows and 6 columns of patches for NanoTarget
     }
     
     // Patch analysis for each channel for both sample and white reference
@@ -484,6 +484,10 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         roiSelector.calculatePatchAverages(rectifiedROI);
         msRadiance[channel] = roiSelector.getPatchAverages();
 
+        auto rectifiedROIWhiteRef = roiSelector.rectifyROI(rectifiedHDRWhiteRefImage[channel]);
+        roiSelector.calculatePatchAverages(rectifiedROIWhiteRef);
+        msRadianceWhiteRef[channel] = roiSelector.getPatchAverages();
+
         if (channel == 3)
         {
             // Visualize and check
@@ -491,10 +495,7 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
             cv::imshow("ROI Selection Check", roiViz);
             cv::waitKey(0);
         }
-
-        auto rectifiedROIWhiteRef = roiSelector.rectifyROI(rectifiedHDRWhiteRefImage[channel]);
-        roiSelector.calculatePatchAverages(rectifiedROIWhiteRef);
-        msRadianceWhiteRef[channel] = roiSelector.getPatchAverages();
+        
     }
 
     //------------------------------------------- MS Reflectance calculation
