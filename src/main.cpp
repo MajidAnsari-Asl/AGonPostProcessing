@@ -10,7 +10,7 @@ int main() {
     std::string whiteRefFolder = "/Volumes/My Passport/PhDFinalData/CapturedData/Session_20251025_213901";
     std::string calibFile = "../data/My_camera_calib.txt";
     std::string analyzeGeometriesFile = "../data/analyzeGeometries.txt";
-    std::string outputSpectralDataFile = "../results/NanoTarget/multiSpectralReflectance_Chamelion_45Degree_GON360Patch.txt";
+    std::string outputSpectralDataFile = "../results/NanoTarget/multiSpectralReflectance_Chamelion_45Degree_GON360Patch_2.txt";
 
     // Set HDR parameters
     HDRParams hdrParams;

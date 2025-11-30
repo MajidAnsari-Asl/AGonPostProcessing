@@ -121,32 +121,38 @@ cv::Mat HDRConstructor::constructHDR(const std::vector<cv::Mat>& images,
         return exposureTimes[a] > exposureTimes[b];
     });
     
+    int count = 0;
     for (size_t idx : indices) {
         const cv::Mat& img = images[idx];
         const cv::Mat& dark = darkImages[idx];
-        double expTime = exposureTimes[idx];
+        double expTime = exposureTimes[idx]/1000000.0; // Convert microseconds to seconds
         
         cv::Mat corrected = img - dark;
         cv::Mat radiance;
         corrected.convertTo(radiance, CV_32F);
         radiance /= expTime;
+
+        // Create mask: pixels within valid range AND not yet filled in radianceMap
+        cv::Mat overallMask = (corrected > params.minDigCount) & 
+                            (corrected < params.maxDigCount) & 
+                            (radianceMap == 0);
+
+        // Copy valid pixels to radianceMap where it's still empty
+        radiance.setTo(0, ~overallMask);
         
-        // Create weight mask
-        cv::Mat weightMask = createMask(corrected);
-        
-        // Accumulate weighted radiance
-        cv::Mat weightedRadiance;
-        cv::multiply(radiance, weightMask, weightedRadiance);
-        radianceMap += weightedRadiance;
-        weightSum += weightMask;
+        radianceMap += radiance;
+
+        if(count == 2) {
+            cv::Mat sturatedMask = (corrected >= params.maxDigCount);
+            cv::Mat temp2;
+
+            double minVal, maxVal;
+            cv::minMaxLoc(radianceMap, &minVal, &maxVal);
+            radianceMap.setTo(maxVal, sturatedMask);
+        }
+
+        count++;
     }
-    
-    // Normalize
-    cv::divide(radianceMap, weightSum, radianceMap);
-    
-    // Handle remaining zeros (if any)
-    cv::Mat zeroMask = (weightSum == 0);
-    radianceMap.setTo(0, zeroMask);
 
     return radianceMap;
 }
@@ -176,6 +182,7 @@ cv::Mat HDRConstructor::createMask(const cv::Mat& image) const {
                 // for now, the pixel values are kept without weighting
                 // weight.at<float>(i, j) = 1.0f;
             }
+
         }
     }
     
@@ -454,15 +461,21 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
 
 
         // save images scale for visualization only
-        cv::Mat displayImage;
-        double minVal, maxVal;
-        cv::minMaxLoc(imRec, &minVal, &maxVal);
-        imRec.convertTo(displayImage, CV_8U, 255.0/(maxVal-minVal), -minVal*255.0/(maxVal-minVal));
-        // cv::imwrite("../results/RegImages/im_" + std::to_string(geometry.theta_i)+"_"
-        //                               + std::to_string(geometry.phi_i)+"_" 
-        //                               + std::to_string(geometry.theta_r)+"_"
-        //                               + std::to_string(geometry.phi_r)+"_CH"+std::to_string(channel+2)
-        //                               + ".png", displayImage);
+        // cv::Mat displayImage;
+        // double minVal, maxVal;
+        // cv::minMaxLoc(imRec, &minVal, &maxVal);
+        // imRec.convertTo(displayImage, CV_8U, 255.0/(maxVal-minVal), -minVal*255.0/(maxVal-minVal));
+        cv::imwrite("../results/RegImages/im_" + std::to_string(geometry.theta_i)+"_"
+                                      + std::to_string(geometry.phi_i)+"_" 
+                                      + std::to_string(geometry.theta_r)+"_"
+                                      + std::to_string(geometry.phi_r)+"_CH"+std::to_string(channel+2)
+                                      + ".tiff", imRec);
+        
+        cv::imwrite("../results/RegImages/wr_" + std::to_string(geometry.theta_i)+"_"
+                                      + std::to_string(geometry.phi_i)+"_" 
+                                      + std::to_string(geometry.theta_r)+"_"
+                                      + std::to_string(geometry.phi_r)+"_CH"+std::to_string(channel+2)
+                                      + ".tiff", imRecWR);
 
     }
     
@@ -488,13 +501,13 @@ std::vector<PatchSpectrum> MultispectralProcessor::processGeometry(const Imaging
         roiSelector.calculatePatchAverages(rectifiedROIWhiteRef);
         msRadianceWhiteRef[channel] = roiSelector.getPatchAverages();
 
-        if (channel == 3)
-        {
-            // Visualize and check
-            cv::Mat roiViz = roiSelector.visualizeROIs(rectifiedROI);
-            cv::imshow("ROI Selection Check", roiViz);
-            cv::waitKey(0);
-        }
+        // if (channel == 3)
+        // {
+        //     // Visualize and check
+        //     cv::Mat roiViz = roiSelector.visualizeROIs(rectifiedROI);
+        //     cv::imshow("ROI Selection Check", roiViz);
+        //     cv::waitKey(0);
+        // }
         
     }
 

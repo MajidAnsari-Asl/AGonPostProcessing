@@ -6,7 +6,17 @@ ROISelector::ROISelector() {}
 
 void ROISelector::selectROICorners(const cv::Mat& image) {
     SelectionData data;
-    data.image = image.clone();
+
+    cv::Mat displayImage;
+
+    cv::Mat sorted;
+    cv::sort(image.reshape(1,1), sorted, cv::SORT_ASCENDING);
+    double minVal = sorted.at<float>(0, sorted.cols * 0.02);  // 1st percentile
+    double maxVal = sorted.at<float>(0, sorted.cols * 0.98);  // 99th percentile
+
+    image.convertTo(displayImage, CV_8U, 255.0/(maxVal-minVal), -minVal*255.0/(maxVal-minVal));
+
+    data.image = displayImage.clone();//image.clone();
     data.corners.resize(4);
     data.completed = false;
     data.currentCorner = 0;
@@ -204,6 +214,15 @@ void ROISelector::calculatePatchAverages(const cv::Mat& image) {
         
         // Calculate average of masked area
         cv::Scalar meanVal = cv::mean(image, mask);
+
+        // // Create mask excluding saturated pixels
+        // double minVal, maxVal;
+        // cv::minMaxLoc(image, &minVal, &maxVal);
+        // cv::Mat validMask = mask & (image < (maxVal - 100)); // Exclude pixels near max value
+        // // Calculate average only of non-saturated pixels within mask
+        // cv::Scalar meanVal = cv::mean(image, validMask);
+
+
         patch.averageValue = meanVal;
     }
 }
